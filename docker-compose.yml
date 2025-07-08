@@ -1,0 +1,89 @@
+# Define all the services that make up our application
+services:
+
+  # PostgreSQL Database Service
+  # The primary transactional database for our core services 
+  postgres:
+    image: postgres:15-alpine
+    container_name: cosure_postgres
+    environment:
+      POSTGRES_USER: pas_user
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: pas_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cosure-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pas_user -d pas_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Caching Service
+  # For session storage and caching to reduce database load 
+  redis:
+    image: redis:7-alpine
+    container_name: cosure_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - cosure-net
+
+  # Go Policy Service
+  policy-service:
+    container_name: cosure_policy_service
+    build:
+      context: ./services-go/policy-service # Path to the service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080" # Map host port 8081 to container port 8080
+    depends_on:
+      postgres:
+        condition: service_healthy # Wait for the DB to be ready
+    networks:
+      - cosure-net
+    environment:
+      # Example environment variable to connect to the DB
+      DATABASE_URL: "postgres://pas_user:changeme@postgres:5432/pas_db?sslmode=disable"
+
+  # Python Rating Service
+  rating-service:
+    container_name: cosure_rating_service
+    build:
+      context: ./services-python/rating-service # Path to the service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000" # Map host port 8001 to container port 8000
+    depends_on:
+      - postgres
+    networks:
+      - cosure-net
+
+  # NOTE: Frontend service is commented out for now.
+  # We will add it once the initial Dockerfile is created in the frontend directory.
+  # frontend:
+  #   container_name: cosure_frontend
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - policy-service
+  #     - rating-service
+  #   networks:
+  #     - cosure-net
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: "http://localhost:8081" 
+
+# Define the network for inter-service communication
+networks:
+  cosure-net:
+    driver: bridge
+
+# Define the persistent volume for PostgreSQL data
+volumes:
+  postgres_data:
